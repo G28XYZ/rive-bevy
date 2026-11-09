@@ -10,14 +10,14 @@ pub enum InputValue {
     Trigger,
 }
 
-#[derive(Clone, Debug, Event)]
+#[derive(Clone, Debug, Message)]
 pub struct Input {
     pub state_machine: Entity,
     pub name: Cow<'static, str>,
     pub value: InputValue,
 }
 
-#[derive(Clone, Debug, Event)]
+#[derive(Clone, Debug, Message)]
 pub struct GenericEvent {
     pub state_machine: Entity,
     pub name: String,

@@ -1,13 +1,10 @@
 use bevy::{
-    asset::{io::Reader, AssetLoader, AsyncReadExt, LoadContext},
+    asset::{io::Reader, AssetLoader, LoadContext},
     prelude::*,
     reflect::TypePath,
-    utils::{
-        thiserror::{self, Error},
-        BoxedFuture,
-    },
 };
 use rive_rs::File;
+use thiserror::Error;
 
 #[derive(Asset, Debug, Deref, TypePath)]
 pub struct Riv(pub rive_rs::File);
@@ -22,7 +19,7 @@ pub enum RivLoaderError {
     RivError(#[from] rive_rs::Error),
 }
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct RivLoader;
 
 impl AssetLoader for RivLoader {
@@ -30,18 +27,15 @@ impl AssetLoader for RivLoader {
     type Settings = ();
     type Error = RivLoaderError;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader,
-        _settings: &'a Self::Settings,
-        _load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::new();
-            reader.read_to_end(&mut bytes).await?;
-
-            Ok(Riv(File::new(&bytes)?))
-        })
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
+        Ok(Riv(File::new(&bytes)?))
     }
 
     fn extensions(&self) -> &[&str] {

@@ -1,16 +1,16 @@
 use bevy::{
+    camera::visibility::RenderLayers,
     input::{mouse::MouseButtonInput, ButtonState},
     math::Vec3A,
+    mesh::{Indices, VertexAttributeValues},
     prelude::*,
-    render::{
-        mesh::{Indices, VertexAttributeValues},
-        render_resource::Face,
-        view::RenderLayers,
-    },
+    render::render_resource::Face,
 };
 
 use crate::{
-    components::{MeshEntity, RiveLinearAnimation, RiveStateMachine, SpriteEntity, Viewport},
+    components::{
+        MeshEntity, RiveLinearAnimation, RiveStateMachine, RiveTarget, SpriteEntity, Viewport,
+    },
     plugin::get_scene_or,
 };
 
@@ -48,8 +48,8 @@ struct PointerEventPasser<'e> {
 
 impl<'e> PointerEventPasser<'e> {
     pub fn new(
-        cursor_moved_events: &'e mut EventReader<CursorMoved>,
-        mouse_button_input_events: &'e mut EventReader<MouseButtonInput>,
+        cursor_moved_events: &'e mut MessageReader<CursorMoved>,
+        mouse_button_input_events: &'e mut MessageReader<MouseButtonInput>,
     ) -> Self {
         Self {
             cursor_moved_events: cursor_moved_events.read().collect(),
@@ -91,7 +91,7 @@ impl<'e> PointerEventPasser<'e> {
             {
                 match mouse_button_input.state {
                     ButtonState::Pressed => scene.pointer_down(pos.x, pos.y, viewport),
-                    ButtonState::Released => scene.pointer_down(pos.x, pos.y, viewport),
+                    ButtonState::Released => scene.pointer_up(pos.x, pos.y, viewport),
                 }
 
                 false
@@ -109,10 +109,10 @@ struct Triangle {
 }
 
 impl Triangle {
-    pub fn intersect_to_mesh_uv(&self, ray: Ray, cull_mode: Option<Face>) -> Option<Vec2> {
+    pub fn intersect_to_mesh_uv(&self, ray: Ray3d, cull_mode: Option<Face>) -> Option<Vec2> {
         let edge0: Vec3A = (self.vertices[1] - self.vertices[0]).into();
         let edge1: Vec3A = (self.vertices[2] - self.vertices[0]).into();
-        let ray_direction: Vec3A = ray.direction.into();
+        let ray_direction: Vec3A = (*ray.direction).into();
         let p_vec = ray_direction.cross(edge1);
         let det: f32 = edge0.dot(p_vec);
 
@@ -214,13 +214,13 @@ pub fn pass(
         Option<&Camera2d>,
         Option<&RenderLayers>,
     )>,
-    mut cursor_moved_events: EventReader<CursorMoved>,
-    mut mouse_button_input_events: EventReader<MouseButtonInput>,
+    mut cursor_moved_events: MessageReader<CursorMoved>,
+    mut mouse_button_input_events: MessageReader<MouseButtonInput>,
     windows: Query<&Window>,
     mut scenes: Query<(
         Option<&mut RiveLinearAnimation>,
         Option<&mut RiveStateMachine>,
-        &Handle<Image>,
+        &RiveTarget,
         &SpriteEntity,
         &MeshEntity,
         &Viewport,
@@ -229,8 +229,8 @@ pub fn pass(
     sprites: Query<(&Transform, Option<&RenderLayers>), With<Sprite>>,
     meshes: Query<(
         &Transform,
-        &Handle<Mesh>,
-        &Handle<StandardMaterial>,
+        &Mesh3d,
+        &MeshMaterial3d<StandardMaterial>,
         Option<&RenderLayers>,
     )>,
     mesh_assets: Res<Assets<Mesh>>,
@@ -247,7 +247,7 @@ pub fn pass(
                 } else {
                     CameraType::Camera3d
                 },
-                render_layers.copied().unwrap_or(RenderLayers::all()),
+                render_layers.cloned().unwrap_or_default(),
             )
         })
         .collect();
@@ -265,7 +265,10 @@ pub fn pass(
             }
 
             let mut scene = get_scene_or!(continue, linear_animation, state_machine);
-            let image_dimensions = image_assets.get(image_handle).unwrap().size().as_vec2();
+            let image_dimensions = image_assets
+                .get(&image_handle.0)
+                .map(|image| image.size().as_vec2())
+                .unwrap_or_default();
 
             match camera_type {
                 CameraType::Camera2d => {
@@ -276,8 +279,7 @@ pub fn pass(
                         continue;
                     };
 
-                    if !camera_render_layers
-                        .intersects(&render_layers.copied().unwrap_or(RenderLayers::all()))
+                    if !camera_render_layers.intersects(&render_layers.cloned().unwrap_or_default())
                     {
                         continue;
                     }
@@ -286,6 +288,7 @@ pub fn pass(
                         |pos| {
                             camera
                                 .viewport_to_world(camera_transform, pos)
+                                .ok()
                                 .map(|ray| ray.origin.truncate())
                                 .and_then(get_filter_map_for_sprite(image_dimensions, *transform))
                         },
@@ -303,16 +306,15 @@ pub fn pass(
                         continue;
                     };
 
-                    let Some(mesh) = mesh_assets.get(mesh_handle) else {
+                    let Some(mesh) = mesh_assets.get(&mesh_handle.0) else {
                         continue;
                     };
 
-                    let Some(material) = material_assets.get(material_handle) else {
+                    let Some(material) = material_assets.get(&material_handle.0) else {
                         continue;
                     };
 
-                    if !camera_render_layers
-                        .intersects(&render_layers.copied().unwrap_or(RenderLayers::all()))
+                    if !camera_render_layers.intersects(&render_layers.cloned().unwrap_or_default())
                     {
                         continue;
                     }
@@ -326,6 +328,7 @@ pub fn pass(
                             |pos| {
                                 camera
                                     .viewport_to_world(camera_transform, pos)
+                                    .ok()
                                     .and_then(|ray| {
                                         triangle.intersect_to_mesh_uv(ray, material.cull_mode)
                                     })

@@ -1,88 +1,99 @@
-![CI Rive Rust](https://github.com/rive-app/rive-rs/actions/workflows/ci.yml/badge.svg)
-![Discord badge](https://img.shields.io/discord/532365473602600965)
-![Twitter handle](https://img.shields.io/twitter/follow/rive_app.svg?style=social&label=Follow)
+# rive-bevy — Bevy 0.19 port
 
-# rive-bevy
+Fork of [rive-app/rive-bevy](https://github.com/rive-app/rive-bevy), targeting
+**Bevy 0.19.1**, **Vello 0.10.0**, and **wgpu 29**. The matching
+[rive-rs fork](https://github.com/G28XYZ/rive-rs/tree/bevy-0.19) updates the
+Vello backend and pins HarfBuzz to the version required by the C++ runtime.
 
-![Rive hero image](https://github.com/rive-app/rive-bevy/assets/13705472/bfa78329-4652-4330-8f46-70c7f365e7bd)
+## Run
 
-A Bevy runtime library for [Rive](https://rive.app).
+A Rust toolchain compatible with Bevy 0.19 and a C++ compiler are required.
 
-For comprehensive guides, refer to the [rive-bevy documentation](https://help.rive.app/game-runtimes/bevy).
-
-> [!NOTE]  
-> This runtime uses [Vello](https://github.com/linebender/vello) as a render back-end, which has certain limitations. Refer to [Known Issues](#known-issues) for details. Efforts are underway to incorporate the [Rive Renderer](https://rive.app/renderer) as another back-end.
-
-## Table of contents
-
-- ⭐️ [Rive Overview](#rive-overview)
-- 🚀 [Getting Started](#getting-started)
-- 👨‍💻 [Contributing](#contributing)
-- ❓ [Issues](#issues)
-
-## Rive Overview
-
-[Rive](https://rive.app) is a real-time interactive design and animation tool that helps teams
-create and run interactive animations anywhere. Designers and developers use our collaborative
-editor to create motion graphics that respond to different states and user inputs. Our lightweight
-open-source runtime libraries allow them to load their animations into apps, games, and websites.
-
-🏡 [Homepage](https://rive.app/)
-
-📘 [General help docs](https://help.rive.app/) · [Rive Bevy docs](https://help.rive.app/game-runtimes/bevy)
-
-🛠 [Learning Rive](https://rive.app/learn-rive/)
-
-👾 [Rive for Game UI](https://rive.app/game-ui)
-
-## Getting Started
-
-The Rive Bevy runtime makes use of the [Rive Rust runtime](https://github.com/rive-app/rive-rs).
-
-You will need a Rust toolchain and a C compiler to build. You can can install
-the Rust toolchain using [rustup].
-
-Run one of the example projects:
-
-```bash
-git clone https://github.com/rive-app/rive-bevy
-cd rive-bevy/
-cargo run --example ui-on-cube
+```sh
+git clone --branch bevy-0.19 https://github.com/G28XYZ/rive-bevy
+cd rive-bevy
+cargo run --example simple_2d
+cargo run --example simple_3d
+cargo run --example rive-input
+cargo run --example rive-events
 ```
 
-There are a number of demos/games in the examples folder that showcase various Rive features.
+`simple_2d` displays an interactive rating animation. `rive-input` also accepts
+keys 1–5. `rive-events` logs animation events. Escape closes the window.
+Add `-- --capture` for an unattended run that saves `/tmp/rive-bevy.png` and exits.
 
-See the [Rive Bevy documentation](https://help.rive.app/game-runtimes/bevy) for additional guides.
+## Integration
 
-### Awesome Rive
+Add `RivePlugin` after `DefaultPlugins`. Load a `.riv` with `AssetServer` and
+spawn a `StateMachine` or `LinearAnimation` together with a `SceneTarget`.
 
-For even more examples and resources on using Rive at runtime or in other tools, checkout the [awesome-rive](https://github.com/rive-app/awesome-rive) repo.
+```rust,no_run
+use bevy::prelude::*;
+use rive_bevy::{create_rive_image, RiveTarget, SceneTarget, SpriteEntity, StateMachine};
 
-## Contributing
-
-We love contributions!
-
-If you need to make changes to the underlying [Rive Rust runtime](https://github.com/rive-app/rive-rs) code you'll need to update your dependencies to point to a local version of the package.
-
-```TOML
-rive-rs = { path = "/loca/path/to/rive-rs", features = [
-    "vello",
-] }
+fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, assets: Res<AssetServer>) {
+    commands.spawn(Camera2d);
+    let image = images.add(create_rive_image(512, 512));
+    let sprite = commands.spawn(Sprite::from_image(image.clone())).id();
+    commands.spawn((
+        StateMachine { riv: assets.load("hud.riv"), ..default() },
+        SceneTarget {
+            image: RiveTarget(image),
+            sprite: SpriteEntity { entity: Some(sprite) },
+            ..default()
+        },
+    ));
+}
 ```
 
-## Issues
+Use `create_rive_image`: ordinary `Image::default()` textures are not compatible
+with Vello storage writes. The helper supplies an unorm storage texture and an
+sRGB sampling view. Each Rive instance should have its own target image.
 
-Have an issue with using the runtime, or want to suggest a feature/API to help make your development
-life better? Log an issue in our [issues](https://github.com/rive-app/rive-bevy/issues) tab! You
-can also browse older issues and discussion threads there to see solutions that may have worked for
-common problems.
+Send `events::Input` through `MessageWriter` for bool, number and trigger inputs.
+Read `GenericEvent` through `MessageReader` for Rive events. For 3D input, assign
+`SceneTarget.mesh` to a `Mesh3d` entity with a `MeshMaterial3d<StandardMaterial>`.
+Game rules and physics remain in Bevy.
 
-### Known Issues
+## Migration and scope
 
-The existing [Vello](https://github.com/linebender/vello) render back-end may lead to some inconsistencies in comparison to the original design:
+- Bevy messages replace the old buffered event API.
+- `RiveTarget` wraps the image handle, since asset handles are no longer components.
+- Rendering runs in Bevy's render schedule before camera rendering; it no longer
+  uses the removed Render Graph API or the old shared texture atlas.
+- Asset reload invalidates all instances of a file, including failed instances.
+- Mouse release forwards `pointer_up`.
+- Static scenes are drawn again so resized or recreated target textures are filled.
+- Original Bevy 0.12 examples are retained under `examples/legacy-bevy-0.12`.
+  The shmup, bloom HUD and composite UI demos have not been ported.
 
-- Image meshes: They can exhibit small inconsistencies at triangle borders, there can be gaps between triangles, transparent meshes will overdraw at triangle borders.
-- Very high number of clips: Vello is currently rendering very high numbers of clips incorrectly.
-- All strokes will have round joins and caps.
+The underlying Rive C++ revision is unchanged. This port does not promise support
+for newer Rive file features, data binding or scripting. Text support is enabled;
+Rive layout is disabled because the upstream Rust repository does not include
+its required Yoga submodule. The integration uses the Vello backend, not Rive's
+native renderer. Image meshes retain the upstream triangle approximation.
+Desktop is the initial target; Web/WASM and mobile have not been validated.
 
-Efforts are being made to make the [Rive Renderer](https://rive.app/renderer) available. You'll then have the choice to select your preferred renderer.
+## Checks
+
+```sh
+cargo fmt --check
+cargo check --all-targets --locked
+cargo test --lib --test runtime --locked
+cargo run --example simple_2d -- --capture
+```
+
+MIT license; original upstream attribution is retained in `LICENSE`.
+
+A proposed CI workflow is stored at `ci/bevy-0.19.yml`. It is not installed in
+GitHub Actions: the publishing token lacks the `workflow` scope. The inherited
+upstream workflow still targets the old toolchain and is not a validation of
+this port.
+
+Local validation on macOS arm64 / Metal (2026-11-09): all targets checked,
+four tests passed, and both 2D and 3D examples rendered successfully. The
+unattended examples sent rating=4 through Bevy messages, checked the runtime
+value, and captured the visible four-star result. The project's
+`kyatto-ninden-teyandee.riv` and `armored-yattaro.riv` also imported and emitted
+Vello drawing commands using `inspect-riv`; this is not a full visual audit
+of every animation in those files.

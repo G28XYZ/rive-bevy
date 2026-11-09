@@ -11,8 +11,8 @@ pub use rive_rs;
 pub use crate::{
     assets::Riv,
     components::{
-        LinearAnimation, MeshEntity, RiveLinearAnimation, RiveStateMachine, SceneTarget,
-        SpriteEntity, StateMachine,
+        create_rive_image, LinearAnimation, MeshEntity, RiveLinearAnimation, RiveStateMachine,
+        RiveTarget, SceneTarget, SpriteEntity, StateMachine,
     },
     events::GenericEvent,
     plugin::RivePlugin,

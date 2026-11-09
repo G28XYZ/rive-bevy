@@ -5,21 +5,18 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Dragoș Tiselice <dragos@rive.app>"]
 homepage = "https://rive.app/"
-repository = "https://github.com/rive-app/rive-bevy"
+repository = "https://github.com/G28XYZ/rive-bevy"
 documentation = "https://help.rive.app/game-runtimes/bevy"
 keywords = ["rive", "bevy", "plugin", "ui", "animation"]
 categories = ["game-development"]
 license = "MIT"
-readme = "../README.md"
+readme = "README.md"
 
 [dependencies]
-bevy = "0.12.0"
-etagere = "0.2.8"
-rive-rs = { git = "https://github.com/rive-app/rive-rs", features = ["vello"] }
-vello = { git = "https://github.com/linebender/vello", rev = "ee3a076" }
-
-[dev-dependencies]
-rand = "0.8.5"
+bevy = { version = "=0.19.1", default-features = false, features = ["2d", "3d", "png", "multi_threaded"] }
+thiserror = "2"
+rive-rs = { git = "https://github.com/G28XYZ/rive-rs", rev = "50a5858a05b86e2b30ac3b44cf914a57d0eb1534", default-features = false, features = ["vello", "text"] }
+vello = "=0.10.0"
 
 [profile.dev]
 opt-level = 1
