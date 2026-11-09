@@ -51,7 +51,7 @@ fn insert_deafult_viewports(
     query: Query<
         (Entity, &RiveTarget),
         (
-            Or<(Added<LinearAnimation>, Added<StateMachine>)>,
+            Or<(With<LinearAnimation>, With<StateMachine>)>,
             Without<Viewport>,
         ),
     >,
@@ -186,7 +186,7 @@ fn instantiate_state_machines(
                             commands.entity(entity).insert(MissingStateMachine);
 
                             error!(
-                                "linear animation {:?} cannot be found in {:?}",
+                                "state machine {:?} cannot be found in {:?}",
                                 state_machine.handle, riv,
                             );
                         }
@@ -207,24 +207,50 @@ fn instantiate_state_machines(
 fn reinstantiate_linear_animations(
     mut commands: Commands,
     mut asset_events: MessageReader<AssetEvent<assets::Riv>>,
-    scenes: Query<(Entity, Option<&LinearAnimation>, Option<&StateMachine>)>,
+    scenes: Query<
+        (
+            Entity,
+            Option<Ref<LinearAnimation>>,
+            Option<Ref<StateMachine>>,
+            Has<RiveLinearAnimation>,
+            Has<RiveStateMachine>,
+        ),
+        Or<(
+            With<LinearAnimation>,
+            With<StateMachine>,
+            With<RiveLinearAnimation>,
+            With<RiveStateMachine>,
+        )>,
+    >,
 ) {
-    for event in asset_events.read() {
-        if let AssetEvent::Modified { id } | AssetEvent::Removed { id } = event {
-            for (entity, animation, machine) in &scenes {
-                if animation.is_some_and(|a| a.riv.id() == *id)
-                    || machine.is_some_and(|m| m.riv.id() == *id)
-                {
-                    commands.entity(entity).remove::<(
-                        RiveLinearAnimation,
-                        RiveStateMachine,
-                        VelloFragment,
-                        MissingArtboard,
-                        MissingLinearAnimation,
-                        MissingStateMachine,
-                    )>();
-                }
-            }
+    let changed_assets: Vec<_> = asset_events
+        .read()
+        .filter_map(|event| match event {
+            AssetEvent::Modified { id } | AssetEvent::Removed { id } => Some(*id),
+            _ => None,
+        })
+        .collect();
+
+    for (entity, animation, machine, has_animation, has_machine) in &scenes {
+        let selection_changed = animation.as_ref().is_some_and(|a| a.is_changed())
+            || machine.as_ref().is_some_and(|m| m.is_changed());
+        let selection_removed =
+            (has_animation && animation.is_none()) || (has_machine && machine.is_none());
+        let asset_changed = animation
+            .as_ref()
+            .is_some_and(|a| changed_assets.contains(&a.riv.id()))
+            || machine
+                .as_ref()
+                .is_some_and(|m| changed_assets.contains(&m.riv.id()));
+        if selection_changed || selection_removed || asset_changed {
+            commands.entity(entity).remove::<(
+                RiveLinearAnimation,
+                RiveStateMachine,
+                VelloFragment,
+                MissingArtboard,
+                MissingLinearAnimation,
+                MissingStateMachine,
+            )>();
         }
     }
 }
@@ -330,14 +356,16 @@ impl Plugin for RivePlugin {
                     .chain(),
             )
             .add_systems(
-                Update,
+                PostUpdate,
                 (
                     pointer_events::pass,
                     pass_state_machine_input_events,
                     render_rive_scenes,
                     send_generic_events,
                 )
-                    .chain(),
+                    .chain()
+                    .after(bevy::transform::TransformSystems::Propagate)
+                    .after(bevy::camera::CameraUpdateSystems),
             )
             .add_plugins(ExtractComponentPlugin::<VelloFragment>::default());
     }
@@ -361,6 +389,89 @@ impl Plugin for RivePlugin {
 mod tests {
     use super::*;
 
+    fn instance_app() -> (App, Entity) {
+        let mut app = App::new();
+        let mut assets = Assets::<Riv>::default();
+        let handle = assets.add(Riv(rive_rs::File::new(include_bytes!(
+            "../assets/rating-animation.riv"
+        ))
+        .unwrap()));
+        app.insert_resource(assets)
+            .add_message::<AssetEvent<Riv>>()
+            .add_systems(
+                Update,
+                (reinstantiate_linear_animations, instantiate_state_machines).chain(),
+            );
+        let entity = app
+            .world_mut()
+            .spawn(StateMachine {
+                riv: handle,
+                ..default()
+            })
+            .id();
+        app.update();
+        assert!(app.world().get::<RiveStateMachine>(entity).is_some());
+        (app, entity)
+    }
+
+    #[test]
+    fn changing_machine_selection_replaces_the_runtime() {
+        let (mut app, entity) = instance_app();
+        app.world_mut()
+            .get_mut::<StateMachine>(entity)
+            .unwrap()
+            .handle = rive_rs::Handle::Name("missing-machine".into());
+        app.update();
+        assert!(app.world().get::<RiveStateMachine>(entity).is_none());
+        assert!(app.world().get::<MissingStateMachine>(entity).is_some());
+    }
+
+    #[test]
+    fn removing_machine_stops_the_runtime_and_drawing() {
+        let (mut app, entity) = instance_app();
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(VelloFragment(Arc::new(vello::Scene::new())))
+            .remove::<StateMachine>();
+        app.update();
+        assert!(app.world().get::<RiveStateMachine>(entity).is_none());
+        assert!(app.world().get::<VelloFragment>(entity).is_none());
+    }
+
+    #[test]
+    fn removing_and_readding_selection_in_one_frame_replaces_the_runtime() {
+        let (mut app, entity) = instance_app();
+        let mut selection = app
+            .world_mut()
+            .entity_mut(entity)
+            .take::<StateMachine>()
+            .unwrap();
+        selection.handle = rive_rs::Handle::Name("missing-machine".into());
+        app.world_mut().entity_mut(entity).insert(selection);
+        app.update();
+        assert!(app.world().get::<RiveStateMachine>(entity).is_none());
+    }
+
+    #[test]
+    fn target_added_after_machine_still_gets_a_viewport() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Image>>()
+            .add_systems(Update, insert_deafult_viewports);
+        let entity = app.world_mut().spawn(StateMachine::default()).id();
+        app.update();
+        let image = app
+            .world_mut()
+            .resource_mut::<Assets<Image>>()
+            .add(crate::create_rive_image(128, 64));
+        app.world_mut().entity_mut(entity).insert(RiveTarget(image));
+        app.update();
+        let viewport = app
+            .world()
+            .get::<Viewport>(entity)
+            .expect("late target must initialize viewport");
+        assert_eq!((viewport.width(), viewport.height()), (128, 64));
+    }
+
     #[test]
     fn hot_reload_invalidates_every_instance_and_ignores_unused_assets() {
         let mut app = App::new();
@@ -372,17 +483,20 @@ mod tests {
         let entities: Vec<_> = (0..2)
             .map(|_| {
                 app.world_mut()
-                    .spawn((
-                        StateMachine {
-                            riv: handle.clone(),
-                            ..default()
-                        },
-                        VelloFragment(Arc::new(vello::Scene::new())),
-                        MissingArtboard,
-                    ))
+                    .spawn(StateMachine {
+                        riv: handle.clone(),
+                        ..default()
+                    })
                     .id()
             })
             .collect();
+        app.update();
+        for &entity in &entities {
+            app.world_mut().entity_mut(entity).insert((
+                VelloFragment(Arc::new(vello::Scene::new())),
+                MissingArtboard,
+            ));
+        }
         app.world_mut()
             .write_message(AssetEvent::<Riv>::Modified { id: unused.id() });
         app.update();

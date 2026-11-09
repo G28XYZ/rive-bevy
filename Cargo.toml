@@ -15,7 +15,7 @@ readme = "README.md"
 [dependencies]
 bevy = { version = "=0.19.1", default-features = false, features = ["2d", "3d", "png", "multi_threaded"] }
 thiserror = "2"
-rive-rs = { git = "https://github.com/G28XYZ/rive-rs", rev = "50a5858a05b86e2b30ac3b44cf914a57d0eb1534", default-features = false, features = ["vello", "text"] }
+rive-rs = { git = "https://github.com/G28XYZ/rive-rs", rev = "d4bab8cf7b91469cb48994e1a2dcd77037bd012d", default-features = false, features = ["vello", "text"] }
 vello = "=0.10.0"
 
 [profile.dev]

@@ -61,8 +61,13 @@ Game rules and physics remain in Bevy.
 - `RiveTarget` wraps the image handle, since asset handles are no longer components.
 - Rendering runs in Bevy's render schedule before camera rendering; it no longer
   uses the removed Render Graph API or the old shared texture atlas.
-- Asset reload invalidates all instances of a file, including failed instances.
-- Mouse release forwards `pointer_up`.
+- Asset reload and animation/state machine selector changes invalidate instances,
+  including failed instances. Removing a selector stops its runtime.
+- Removing a target or viewport also removes its extracted render scene.
+- Mouse picking uses global transforms, sprite sizing, anchors and flips. Events
+  are scoped to the camera's window and viewport; release reaches the pressed
+  scene even when the pointer has left its target.
+- Rive advances after Bevy updates camera and object transforms.
 - Static scenes are drawn again so resized or recreated target textures are filled.
 - Original Bevy 0.12 examples are retained under `examples/legacy-bevy-0.12`.
   The shmup, bloom HUD and composite UI demos have not been ported.
@@ -73,6 +78,7 @@ Rive layout is disabled because the upstream Rust repository does not include
 its required Yoga submodule. The integration uses the Vello backend, not Rive's
 native renderer. Image meshes retain the upstream triangle approximation.
 Desktop is the initial target; Web/WASM and mobile have not been validated.
+Picking among overlapping entities and sliced/tiled sprites has not been validated.
 
 ## Checks
 
@@ -90,10 +96,16 @@ GitHub Actions: the publishing token lacks the `workflow` scope. The inherited
 upstream workflow still targets the old toolchain and is not a validation of
 this port.
 
-Local validation on macOS arm64 / Metal (2026-11-09): all targets checked,
-four tests passed, and both 2D and 3D examples rendered successfully. The
+Local validation on macOS arm64 / Metal (2026-11-10): all targets checked,
+18 tests passed, and both 2D and 3D examples rendered successfully. The
 unattended examples sent rating=4 through Bevy messages, checked the runtime
 value, and captured the visible four-star result. The project's
 `kyatto-ninden-teyandee.riv` and `armored-yattaro.riv` also imported and emitted
 Vello drawing commands using `inspect-riv`; this is not a full visual audit
 of every animation in those files.
+
+The pinned runtime also fixes intersecting clips, blended stroke bounds,
+mesh opacity, buffer alignment and macOS release linking. Its six unit tests
+and doctest passed. The macOS release configuration was checked with optimization
+disabled (`CARGO_PROFILE_RELEASE_OPT_LEVEL=0`); a fully optimized release build
+has not been validated.

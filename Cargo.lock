@@ -4551,7 +4551,7 @@ dependencies = [
 [[package]]
 name = "rive-rs"
 version = "0.1.0"
-source = "git+https://github.com/G28XYZ/rive-rs?rev=50a5858a05b86e2b30ac3b44cf914a57d0eb1534#50a5858a05b86e2b30ac3b44cf914a57d0eb1534"
+source = "git+https://github.com/G28XYZ/rive-rs?rev=d4bab8cf7b91469cb48994e1a2dcd77037bd012d#d4bab8cf7b91469cb48994e1a2dcd77037bd012d"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",

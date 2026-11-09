@@ -78,8 +78,8 @@ impl SyncComponent for VelloFragment {
 impl ExtractComponent for VelloFragment {
     type QueryData = (
         &'static VelloFragment,
-        &'static RiveTarget,
-        &'static Viewport,
+        Option<&'static RiveTarget>,
+        Option<&'static Viewport>,
     );
 
     type QueryFilter = ();
@@ -89,6 +89,10 @@ impl ExtractComponent for VelloFragment {
     fn extract_component(
         (fragment, image, viewport): bevy::ecs::query::QueryItem<'_, '_, Self::QueryData>,
     ) -> Option<Self::Out> {
+        // Keep matching the fragment when supporting components disappear so
+        // extraction removes the previously extracted VelloScene.
+        let image = image?;
+        let viewport = viewport?;
         Some(VelloScene {
             fragment: fragment.0.clone(),
             image_handle: image.0.clone(),
@@ -131,4 +135,68 @@ pub fn create_rive_image(width: u32, height: u32) -> Image {
         ..default()
     });
     image
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::{
+        ecs::schedule::ScheduleLabel,
+        render::{
+            extract_component::ExtractComponentPlugin, extract_plugin::ExtractPlugin,
+            sync_world::RenderEntity, Render, RenderApp,
+        },
+    };
+
+    fn assert_extracted_scene_tracks_supporting_component<C: Component>() {
+        let mut app = App::new();
+        app.add_plugins((
+            ExtractPlugin::default(),
+            ExtractComponentPlugin::<VelloFragment>::default(),
+        ));
+        // Exercise Bevy's real extraction and deferred cleanup without a GPU.
+        app.sub_app_mut(RenderApp).update_schedule = Some(Render.intern());
+        let entity = app
+            .world_mut()
+            .spawn((
+                VelloFragment(Arc::new(vello::Scene::new())),
+                RiveTarget::default(),
+                Viewport::default(),
+            ))
+            .id();
+        app.update();
+        let render_entity = app.world().get::<RenderEntity>(entity).unwrap().id();
+        assert!(app
+            .sub_app(RenderApp)
+            .world()
+            .get::<VelloScene>(render_entity)
+            .is_some());
+
+        let removed = app.world_mut().entity_mut(entity).take::<C>().unwrap();
+        app.update();
+        assert!(app.world().get::<VelloFragment>(entity).is_some());
+        assert!(app
+            .sub_app(RenderApp)
+            .world()
+            .get::<VelloScene>(render_entity)
+            .is_none());
+
+        app.world_mut().entity_mut(entity).insert(removed);
+        app.update();
+        assert!(app
+            .sub_app(RenderApp)
+            .world()
+            .get::<VelloScene>(render_entity)
+            .is_some());
+    }
+
+    #[test]
+    fn removing_rive_target_clears_the_extracted_scene() {
+        assert_extracted_scene_tracks_supporting_component::<RiveTarget>();
+    }
+
+    #[test]
+    fn removing_viewport_clears_the_extracted_scene() {
+        assert_extracted_scene_tracks_supporting_component::<Viewport>();
+    }
 }
